@@ -1,7 +1,7 @@
 use std::{time::{Duration, SystemTime}, sync::Arc};
 
 use tokio::{sync::RwLock, time::sleep};
-
+use opencv::prelude::*;
 use crate::DogSighting;
 
 

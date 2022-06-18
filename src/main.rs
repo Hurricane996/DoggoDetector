@@ -10,6 +10,7 @@ use tokio::sync::broadcast::Receiver;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 
+extern crate tensorflow;
 
 mod cv;
 

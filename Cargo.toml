@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 tokio = {version = "1.19", features=["full"]}
+opencv = "0.65.0"
+tensorflow = "0.18.0"
