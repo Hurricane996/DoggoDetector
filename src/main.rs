@@ -1,18 +1,18 @@
-use std::alloc::System;
-use std::time::Duration;
+
+mod cv;
+mod web;
+
 use std::{time::SystemTime, sync::Arc};
 
 use cv::Image;
 use cv::setup_cv_loop;
 
-use tokio::sync::Mutex;
-use tokio::sync::broadcast::Receiver;
 use tokio::sync::RwLock;
-use tokio::time::sleep;
+
+use crate::web::setup_web_server;
 
 extern crate tensorflow;
 
-mod cv;
 
 #[tokio::main]
 async fn main() {
@@ -21,9 +21,9 @@ async fn main() {
 
     let last_sighting: Arc<RwLock<Option<DogSighting>>> = Arc::new(RwLock::new(None));
 
-    setup_cv_loop(last_sighting);
+    setup_cv_loop(last_sighting.clone());
 
-    // TODO web server stuff
+    setup_web_server(last_sighting).await;
 }
 
 
