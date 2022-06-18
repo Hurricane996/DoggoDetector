@@ -13,11 +13,9 @@ use crate::web::setup_web_server;
 
 extern crate tensorflow;
 
-
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     println!("Hello, world!");
-
 
     let last_sighting: Arc<RwLock<Option<DogSighting>>> = Arc::new(RwLock::new(None));
 
