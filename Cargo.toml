@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 tokio = {version = "1.19", features=["full"]}
 # https://github.com/twistedfall/opencv-rust
-opencv = "0.62.0"
+opencv = "0.65.0"
 # https://github.com/tensorflow/rust
 tensorflow = "0.18.0"
 axum = "0.5"
