@@ -16,10 +16,12 @@ lazy_static! {
 
 pub fn setup_cv_loop(last_sighting: Arc<RwLock<Option<DogSighting>>>) {
     let mut cv_subsystem = CVSubsystem::new(core::Rect { x: 0, y: 0, width: 640, height: 480 });
+    println!("CV Subsystem initialization complete");
 
     let last_sighting = last_sighting.clone();
     thread::spawn(move || {
         loop {
+            println!("Running dogcheck");
             match cv_subsystem.get_dog() {
                 Ok(Some(image)) => {
                     let sighting = DogSighting {
@@ -36,7 +38,7 @@ pub fn setup_cv_loop(last_sighting: Arc<RwLock<Option<DogSighting>>>) {
             }
 
  
-            sleep(CV_LOOP_SLEEP_TIME);
+            thread::sleep(CV_LOOP_SLEEP_TIME);
         }
     });
 }
@@ -84,12 +86,14 @@ impl CVSubsystem {
         let name: &str = "Dog Monitor";
         highgui::named_window("Dog Monitor", 0)
             .unwrap_or_else(|err| panic!("Unable to open window! Error {err}"));
+        println!("Window open successful");
+        
         let cam: videoio::VideoCapture = videoio::VideoCapture::new(0, videoio::CAP_ANY)
             .unwrap_or_else(|err| panic!("Error while opening video capture! Error {err}"));
         match cam.is_opened() {
             Ok(false) => panic!("Failed to open camera!"),
             Err(e) => panic!("Error checking camera open status! Error {e}"),
-            _ => { }
+            _ => { println!("Open successful")}
         }
         // interim segfault testing
         // if this doesn't segfault, the rest of OpenCV should work
