@@ -1,6 +1,7 @@
 
 mod cv;
 mod web;
+mod double_buffer;
 
 use std::{time::SystemTime, sync::Arc};
 
@@ -21,7 +22,7 @@ async fn main() {
 
     setup_cv_loop(last_sighting.clone());
 
-    //setup_web_server(last_sighting).await;
+    setup_web_server(last_sighting).await;
     
 }
 

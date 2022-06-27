@@ -1,10 +1,11 @@
-use std::{time::{Duration, SystemTime}, sync::Arc, thread, ffi::c_void};
+#![allow(non_snake_case)]
 
-use tokio::{sync::RwLock, time::sleep, task};
-use opencv::{prelude::*, imgcodecs::imencode, core::{Vector, _InputArray}};
-use opencv::{core, highgui, imgcodecs, videoio, imgproc};
-use opencv::core::ToInputArray;
-use crate::DogSighting;
+use std::{time::{Duration, SystemTime}, sync::Arc, thread};
+
+use tokio::{sync::RwLock};
+use opencv::{prelude::*, imgcodecs::imencode, core::Vector};
+use opencv::{core, highgui, videoio, imgproc};
+use crate::{DogSighting, double_buffer::DoubleBuffer};
 use lazy_static::lazy_static;
 
 
@@ -15,11 +16,11 @@ lazy_static! {
 }
 
 pub fn setup_cv_loop(last_sighting: Arc<RwLock<Option<DogSighting>>>) {
-    let mut cv_subsystem = CVSubsystem::new(core::Rect { x: 0, y: 0, width: 640, height: 480 });
-    println!("CV Subsystem initialization complete");
-
     let last_sighting = last_sighting.clone();
     thread::spawn(move || {
+        let mut cv_subsystem = CVSubsystem::new(core::Rect { x: 0, y: 0, width: 640, height: 480 });
+        println!("CV Subsystem initialization complete");
+
         loop {
             println!("Running dogcheck");
             match cv_subsystem.get_dog() {
@@ -30,8 +31,9 @@ pub fn setup_cv_loop(last_sighting: Arc<RwLock<Option<DogSighting>>>) {
                     };
 
                     last_sighting.blocking_write().replace(sighting);
+                    println!("Dog found")
                 },
-                Ok(None) => {},
+                Ok(None) => {println!("No dog found")},
                 Err(e) => {
                     eprintln!("Failed to check image for dog, got error {e}")
                 }
@@ -43,35 +45,10 @@ pub fn setup_cv_loop(last_sighting: Arc<RwLock<Option<DogSighting>>>) {
     });
 }
 
-
-trait DuplicatePointer {
-    unsafe fn duplicate_pointer(&mut self) -> DuplicatedPointer;
-}
-
-impl DuplicatePointer for Mat {
-    unsafe fn duplicate_pointer(&mut self) -> DuplicatedPointer {
-        DuplicatedPointer{
-            ptr: self.as_raw_mut()
-        }
-    }
-}
-
-struct DuplicatedPointer {
-    ptr: *mut c_void
-}
-
-impl ToInputArray for DuplicatedPointer {
-    fn input_array(&self) -> opencv::Result<core::_InputArray> {
-        unsafe {
-            Ok(_InputArray::from_raw(self.ptr))
-        }
-    }
-}
-
+ 
 
 pub type Image = Vec<u8>;
 
-#[allow(non_snake_case)]
 pub struct CVSubsystem {
     // OpenCV highgui uses names instead of objects or handles
     windowName: String,
@@ -87,14 +64,14 @@ impl CVSubsystem {
         highgui::named_window("Dog Monitor", 0)
             .unwrap_or_else(|err| panic!("Unable to open window! Error {err}"));
         println!("Window open successful");
-        
-        let cam: videoio::VideoCapture = videoio::VideoCapture::new(0, videoio::CAP_ANY)
-            .unwrap_or_else(|err| panic!("Error while opening video capture! Error {err}"));
-        match cam.is_opened() {
-            Ok(false) => panic!("Failed to open camera!"),
-            Err(e) => panic!("Error checking camera open status! Error {e}"),
+
+        let cam: videoio::VideoCapture = videoio::VideoCapture::new(0, videoio::CAP_V4L2)
+           .unwrap_or_else(|err| panic!("Error while opening video capture! Error {err}"));
+         match cam.is_opened() {
+             Ok(false) => panic!("Failed to open camera!"),
+             Err(e) => panic!("Error checking camera open status! Error {e}"),
             _ => { println!("Open successful")}
-        }
+         }
         // interim segfault testing
         // if this doesn't segfault, the rest of OpenCV should work
         /*print!("Starting up opencv...");
@@ -113,43 +90,55 @@ impl CVSubsystem {
     
     pub fn get_dog(&mut self) -> Result<Option<Vec<u8>>, opencv::Error> {
         // grab a new frame from the camera
-        let mut newFrame: Mat = Mat::default();
-        self.camera.read(&mut newFrame)?;
+        let mut newFrame: DoubleBuffer<Mat> = DoubleBuffer::default();
+        self.camera.read(newFrame.buffers().1)?;
+        newFrame.swap();
+
+        // keep a copy of the original image around, this is what we send to the end user if we find the frank
+        let new_frame_original = newFrame.clone_front();
+
         
         // run it through the vision pipeline
         // crop to the region of interest
-        
-        // explicitly converting to an input array clones the pointer because bad library design
-        // but im not complaining because it makes solving the problem easier
 
-        unsafe {
-            // convert to grayscale to reduce visual noise
-            imgproc::cvt_color(&newFrame.duplicate_pointer(), &mut newFrame, imgproc::COLOR_BGR2GRAY, 0)?;
-            // apply a bit of blur to further reduce visual noise. this frame will later be stored so it can be compared
-            // to the next frame.
-            imgproc::blur(&newFrame.duplicate_pointer(), &mut newFrame, core::Size::new(4, 4), core::Point::new(-1, -1), core::BORDER_DEFAULT)?;
-        }
+        // convert to grayscale to reduce visual noise
+        let (src, dst) = newFrame.buffers();
+        imgproc::cvt_color(src, dst, imgproc::COLOR_BGR2GRAY, 0)?;
+        newFrame.swap();
+
+        // apply a bit of blur to further reduce visual noise. this frame will later be stored so it can be compared
+        // to the next frame.
+        let (src, dst) = newFrame.buffers();
+        imgproc::blur(src, dst, core::Size::new(4, 4), core::Point::new(-1, -1), core::BORDER_DEFAULT)?;
+        newFrame.swap();
         // if we don't have a previous frame to compare to, so just store the new frame and say there is no dog
         // this is a pretty inelegant way of handling initialization, but oh well
         if self.lastFrame.empty() {
-            self.lastFrame = newFrame;
+            self.lastFrame = newFrame.to_front();
         } else {
-            let mut difference: Mat = Mat::default();
+            let mut difference: DoubleBuffer<Mat> = DoubleBuffer::default();
             // compute the absolute difference between the new frame and the old frame.
-            core::absdiff(&newFrame, &self.lastFrame, &mut difference)?;
+            core::absdiff(&newFrame.buffers().0, &self.lastFrame, difference.buffers().1)?;
+            difference.swap();
+
             let kernel: Mat = imgproc::get_structuring_element(imgproc::MORPH_RECT, core::Size::new(5, 5), core::Point::new(-1, -1))?;
-            unsafe {
-                imgproc::erode(&difference.duplicate_pointer(), &mut difference, &kernel, core::Point::new(-1, -1), 3, core::BORDER_DEFAULT, core::Scalar::from(0))?;
-                imgproc::dilate(&difference.duplicate_pointer(), &mut difference, &kernel, core::Point::new(-1, -1), 3, core::BORDER_DEFAULT, core::Scalar::from(0))?;
-            }
-            if core::sum_elems(&difference)? > *CV_MOTION_THRESHOLD {
+            
+            let (src, dst) = difference.buffers();
+            imgproc::erode(src, dst, &kernel, core::Point::new(-1, -1), 3, core::BORDER_DEFAULT, core::Scalar::from(0))?;
+            difference.swap();
+
+            let (src, dst) = difference.buffers();
+            imgproc::dilate(src, dst, &kernel, core::Point::new(-1, -1), 3, core::BORDER_DEFAULT, core::Scalar::from(0))?;
+            difference.swap();
+            
+            if core::sum_elems(&difference.buffers().0)? > *CV_MOTION_THRESHOLD {
                 // motion detected
                 // todo machine learning magic
-                self.lastFrame = newFrame;
+                self.lastFrame = newFrame.to_front();
 
                 
                 let mut buf = Vector::new();
-                imencode(".png", &self.lastFrame, &mut buf, &Vector::new())?;
+                imencode(".png", &new_frame_original, &mut buf, &Vector::new())?;
                 return Ok(Some(buf.to_vec()));
             }
         }
