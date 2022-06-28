@@ -91,7 +91,7 @@ impl CVSubsystem {
     pub fn get_dog(&mut self) -> Result<Option<Vec<u8>>, opencv::Error> {
         // grab a new frame from the camera
         let mut newFrame: DoubleBuffer<Mat> = DoubleBuffer::default();
-        self.camera.read(newFrame.buffers().1)?;
+        self.camera.read(newFrame.back())?;
         newFrame.swap();
 
         // keep a copy of the original image around, this is what we send to the end user if we find the frank
@@ -118,9 +118,9 @@ impl CVSubsystem {
         } else {
             let mut difference: DoubleBuffer<Mat> = DoubleBuffer::default();
             // compute the absolute difference between the new frame and the old frame.
-            core::absdiff(&newFrame.buffers().0, &self.lastFrame, difference.buffers().1)?;
+            core::absdiff(&newFrame.front(), &self.lastFrame, difference.back())?;
             difference.swap();
-
+            
             let kernel: Mat = imgproc::get_structuring_element(imgproc::MORPH_RECT, core::Size::new(5, 5), core::Point::new(-1, -1))?;
             
             let (src, dst) = difference.buffers();
@@ -131,7 +131,7 @@ impl CVSubsystem {
             imgproc::dilate(src, dst, &kernel, core::Point::new(-1, -1), 3, core::BORDER_DEFAULT, core::Scalar::from(0))?;
             difference.swap();
             
-            if core::sum_elems(&difference.buffers().0)? > *CV_MOTION_THRESHOLD {
+            if core::sum_elems(&difference.front())? > *CV_MOTION_THRESHOLD {
                 // motion detected
                 // todo machine learning magic
                 self.lastFrame = newFrame.to_front();

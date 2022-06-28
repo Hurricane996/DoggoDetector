@@ -24,6 +24,23 @@ impl<T> DoubleBuffer<T> {
         }
     }
 
+    pub fn front(&self) -> &T {
+        match self.front {
+            FrontBuffer::A => &self.a,
+            FrontBuffer::B => &self.b,
+        }
+    }
+
+    pub fn back(&mut self) -> &mut T {
+        match self.front {
+            FrontBuffer::A => &mut self.b,
+            FrontBuffer::B => &mut self.a,
+        }
+    }
+
+
+
+
     pub fn to_front(self) -> T {
         match self.front {
             FrontBuffer::A => self.a,
