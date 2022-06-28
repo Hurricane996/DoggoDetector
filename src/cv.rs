@@ -90,6 +90,8 @@ impl CVSubsystem {
     }
     
     pub fn get_dog(&mut self) -> Result<Option<Vec<u8>>, opencv::Error> {
+        poll_key()?;
+        
         // grab a new frame from the camera
         let mut newFrame: DoubleBuffer<Mat> = DoubleBuffer::default();
         self.camera.read(newFrame.back())?;
@@ -99,7 +101,7 @@ impl CVSubsystem {
         let new_frame_original = newFrame.clone_front();
         // and also what we send to the display
         highgui::imshow(self.windowName.as_str(), &new_frame_original)?;
-        poll_key()?;
+        poll_key();
         
         // run it through the vision pipeline
         // crop to the region of interest
@@ -114,6 +116,8 @@ impl CVSubsystem {
         let (src, dst) = newFrame.buffers();
         imgproc::blur(src, dst, core::Size::new(4, 4), core::Point::new(-1, -1), core::BORDER_DEFAULT)?;
         newFrame.swap();
+        highgui::imshow("grayscale", &newFrame.clone_front())?;
+        poll_key();
         // if we don't have a previous frame to compare to, just store the new frame and say there is no dog
         // this is a pretty inelegant way of handling initialization, but oh well
         if self.lastFrame.empty() {
@@ -123,6 +127,10 @@ impl CVSubsystem {
             // compute the absolute difference between the new frame and the old frame.
             core::absdiff(&newFrame.front(), &self.lastFrame, difference.back())?;
             difference.swap();
+            highgui::imshow("difference", &difference.clone_front())?;
+            poll_key()?;
+            
+            // todo add adaptive thresholding
             
             let kernel: Mat = imgproc::get_structuring_element(imgproc::MORPH_RECT, core::Size::new(5, 5), core::Point::new(-1, -1))?;
             
