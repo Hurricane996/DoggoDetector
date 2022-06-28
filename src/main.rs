@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 
 use crate::web::setup_web_server;
 
-extern crate tensorflow;
+//extern crate tensorflow;
 
 #[tokio::main]
 async fn main() {

@@ -7,7 +7,7 @@ use opencv::{prelude::*, imgcodecs::imencode, core::Vector};
 use opencv::{core, highgui, videoio, imgproc};
 use crate::{DogSighting, double_buffer::DoubleBuffer};
 use lazy_static::lazy_static;
-
+use opencv::highgui::{poll_key, WINDOW_AUTOSIZE, WindowFlags};
 
 const CV_LOOP_SLEEP_TIME: Duration = Duration::from_secs(2);
 
@@ -61,8 +61,9 @@ impl CVSubsystem {
     pub fn new(roi: core::Rect) -> Self {
         // initialize OpenCV
         let name: &str = "Dog Monitor";
-        highgui::named_window("Dog Monitor", 0)
+        highgui::named_window("Dog Monitor", WINDOW_AUTOSIZE)
             .unwrap_or_else(|err| panic!("Unable to open window! Error {err}"));
+        poll_key().expect("Failed to poll key");
         println!("Window open successful");
 
         let cam: videoio::VideoCapture = videoio::VideoCapture::new(0, videoio::CAP_V4L2)
@@ -96,7 +97,9 @@ impl CVSubsystem {
 
         // keep a copy of the original image around, this is what we send to the end user if we find the frank
         let new_frame_original = newFrame.clone_front();
-
+        // and also what we send to the display
+        highgui::imshow(self.windowName.as_str(), &new_frame_original)?;
+        poll_key()?;
         
         // run it through the vision pipeline
         // crop to the region of interest
@@ -111,7 +114,7 @@ impl CVSubsystem {
         let (src, dst) = newFrame.buffers();
         imgproc::blur(src, dst, core::Size::new(4, 4), core::Point::new(-1, -1), core::BORDER_DEFAULT)?;
         newFrame.swap();
-        // if we don't have a previous frame to compare to, so just store the new frame and say there is no dog
+        // if we don't have a previous frame to compare to, just store the new frame and say there is no dog
         // this is a pretty inelegant way of handling initialization, but oh well
         if self.lastFrame.empty() {
             self.lastFrame = newFrame.to_front();
