@@ -9,7 +9,7 @@ use crate::{DogSighting, double_buffer::DoubleBuffer};
 use lazy_static::lazy_static;
 use opencv::highgui::{poll_key, WINDOW_AUTOSIZE, WindowFlags};
 
-const CV_LOOP_SLEEP_TIME: Duration = Duration::from_secs(2);
+const CV_LOOP_SLEEP_TIME: Duration = Duration::from_millis(30);
 
 lazy_static! {
     static ref CV_MOTION_THRESHOLD: core::Scalar = core::Scalar::from(100 * 100);
@@ -125,24 +125,33 @@ impl CVSubsystem {
         } else {
             let mut difference: DoubleBuffer<Mat> = DoubleBuffer::default();
             // compute the absolute difference between the new frame and the old frame.
-            core::absdiff(&newFrame.front(), &self.lastFrame, difference.back())?;
+            core::absdiff(newFrame.front(), &self.lastFrame, difference.back())?;
             difference.swap();
             highgui::imshow("difference", &difference.clone_front())?;
             poll_key()?;
             
-            // todo add adaptive thresholding
+            // the opencv docs say this can be done in-place on an image
+            let (src, dst) = difference.buffers();
+            imgproc::threshold(src, dst, 50 as f64, 255 as f64, imgproc::THRESH_BINARY)?;
+            difference.swap();
+            highgui::imshow("threshold", &difference.clone_front())?;
+            poll_key()?;
             
-            let kernel: Mat = imgproc::get_structuring_element(imgproc::MORPH_RECT, core::Size::new(5, 5), core::Point::new(-1, -1))?;
+            let kernel: Mat = imgproc::get_structuring_element(imgproc::MORPH_ELLIPSE, core::Size::new(5, 5), core::Point::new(-1, -1))?;
             
             let (src, dst) = difference.buffers();
             imgproc::erode(src, dst, &kernel, core::Point::new(-1, -1), 3, core::BORDER_DEFAULT, core::Scalar::from(0))?;
             difference.swap();
+            highgui::imshow("erode", &difference.clone_front())?;
+            poll_key()?;
 
             let (src, dst) = difference.buffers();
-            imgproc::dilate(src, dst, &kernel, core::Point::new(-1, -1), 3, core::BORDER_DEFAULT, core::Scalar::from(0))?;
+            imgproc::dilate(src, dst, &kernel, core::Point::new(-1, -1), 6, core::BORDER_DEFAULT, core::Scalar::from(0))?;
             difference.swap();
+            highgui::imshow("dilate", &difference.clone_front())?;
+            poll_key()?;
             
-            if core::sum_elems(&difference.front())? > *CV_MOTION_THRESHOLD {
+            if core::sum_elems(difference.front())? > *CV_MOTION_THRESHOLD {
                 // motion detected
                 // todo machine learning magic
                 self.lastFrame = newFrame.to_front();
